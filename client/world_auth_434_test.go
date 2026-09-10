@@ -179,6 +179,10 @@ func TestWorldAuth434Handshake(t *testing.T) {
 }
 
 func mockWorld434(ln net.Listener) error {
+	return mockWorldThen434(ln, nil)
+}
+
+func mockWorldThen434(ln net.Listener, after func(net.Conn, *rc4.Cipher) error) error {
 	conn, err := ln.Accept()
 	if err != nil {
 		return err
@@ -239,6 +243,11 @@ func mockWorld434(ln net.Listener) error {
 	// Coalesce an unsolicited packet and auth response, testing cipher continuity.
 	if err := write434(conn, append(frame434(0x7777, []byte{9, 8, 7}, c), frame434(cataAuthResponse, success434(), c)...)); err != nil {
 		return err
+	}
+	if after != nil {
+		if err := after(conn, c); err != nil {
+			return err
+		}
 	}
 	var extra [1]byte
 	n, err = conn.Read(extra[:])
