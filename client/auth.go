@@ -46,6 +46,7 @@ var (
 type RealmInfo struct {
 	Name    string
 	Address string
+	ID      uint32 // Realm-list ID, widened for CMSG_AUTH_SESSION.
 }
 
 // AuthClient handles the authentication protocol
@@ -318,44 +319,74 @@ func (a *AuthClient) requestRealmList() ([]RealmInfo, error) {
 		return nil, err
 	}
 
+	if header[0] != AuthRealmList {
+		return nil, fmt.Errorf("unexpected realm-list command 0x%X", header[0])
+	}
 	size := binary.LittleEndian.Uint16(header[1:3])
 	data := make([]byte, size)
 	if _, err := io.ReadFull(a.conn, data); err != nil {
 		return nil, err
 	}
 
+	return parseRealms434(data)
+}
+
+// parseRealms434 preserves the realm ID and consumes optional build information.
+func parseRealms434(data []byte) ([]RealmInfo, error) {
 	r := bytes.NewReader(data)
-
-	// padding (4 bytes)
-	var padding uint32
-	binary.Read(r, binary.LittleEndian, &padding)
-
-	// realm count (2 bytes)
-	var count uint16
-	binary.Read(r, binary.LittleEndian, &count)
-
+	var prefix [6]byte
+	if _, err := io.ReadFull(r, prefix[:]); err != nil {
+		return nil, err
+	}
+	count := binary.LittleEndian.Uint16(prefix[4:])
 	var realms []RealmInfo
 	for i := uint16(0); i < count; i++ {
-		// icon (1) + locked (1) + flag (1)
-		skip := make([]byte, 3)
-		r.Read(skip)
-
-		// name (null-terminated string)
-		name := readCString(r)
-		// address (null-terminated string)
-		address := readCString(r)
-
-		// population(4) + chars(1) + timezone(1) + realmID(1)
-		trailer := make([]byte, 7)
-		r.Read(trailer)
-
-		realms = append(realms, RealmInfo{
-			Name:    name,
-			Address: address,
-		})
+		var flags [3]byte
+		if _, err := io.ReadFull(r, flags[:]); err != nil {
+			return nil, err
+		}
+		name, err := realmCString434(r)
+		if err != nil {
+			return nil, err
+		}
+		address, err := realmCString434(r)
+		if err != nil {
+			return nil, err
+		}
+		var trailer [7]byte
+		if _, err := io.ReadFull(r, trailer[:]); err != nil {
+			return nil, err
+		}
+		if flags[2]&0x04 != 0 { // REALM_FLAG_SPECIFYBUILD
+			var build [5]byte
+			if _, err := io.ReadFull(r, build[:]); err != nil {
+				return nil, err
+			}
+		}
+		realms = append(realms, RealmInfo{Name: name, Address: address, ID: uint32(trailer[6])})
 	}
-
+	var end [2]byte
+	if _, err := io.ReadFull(r, end[:]); err != nil {
+		return nil, err
+	}
+	if r.Len() != 0 {
+		return nil, fmt.Errorf("unexpected realm-list trailing data")
+	}
 	return realms, nil
+}
+
+func realmCString434(r *bytes.Reader) (string, error) {
+	var b []byte
+	for {
+		c, err := r.ReadByte()
+		if err != nil {
+			return "", err
+		}
+		if c == 0 {
+			return string(b), nil
+		}
+		b = append(b, c)
+	}
 }
 
 // SessionKey returns the session key after successful authentication

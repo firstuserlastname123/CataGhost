@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -52,11 +52,13 @@ foundVerb:
 	}
 
 	// CLI flags (common + mode-specific; full wiring in later PRs)
-	mode := flag.String("mode", "", "Run mode: 'cli' for single bot, 'node' for HTTP API node server, 'orchestrator' for test controller, 'scenario' for Lua scenario runner")
+	mode := flag.String("mode", "", "Run mode: auth, world-auth, 'cli' for single bot, 'node' for HTTP API node server, 'orchestrator' for test controller, 'scenario' for Lua scenario runner")
 	username := flag.String("username", "admin", "Account username")
 	password := flag.String("password", "admin", "Account password")
 	authServer := flag.String("auth-server", "127.0.0.1:3724", "Auth server address (host:port)")
 	charName := flag.String("char-name", "Loadtst", "Character name")
+	realmName := flag.String("realm-name", "", "Exact realm name required by world-auth")
+	expectedWorld := flag.String("expected-world-address", "", "Required advertised world address for world-auth (host:port)")
 	realmIndex := flag.Int("realm-index", 0, "Realm index (0-based)")
 	listenAddr := flag.String("listen", ":8888", "HTTP server listen address (node mode)")
 	race := flag.Int("race", 1, "Character race for creation (default: 1=Human)")
@@ -201,6 +203,11 @@ foundVerb:
 		runOrchestrator(cliCfg)
 	case "auth":
 		runAuth(cliCfg)
+	case "world-auth":
+		if err := runWorldAuth(cliCfg, *realmName, *expectedWorld); err != nil {
+			fmt.Fprintf(os.Stderr, "World authentication failed: %v\n", err)
+			os.Exit(1)
+		}
 	case "scenario":
 		runScenario(os.Args[1:], cliCfg) // pass remaining args + loaded config for E2E (auth/data_dir from profile)
 	default:
