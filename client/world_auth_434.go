@@ -28,6 +28,10 @@ const (
 // It never enumerates characters or enters the gameplay packet dispatcher.
 // Queued sessions are reported as errors; queue progression is not implemented.
 func AuthenticateWorld434(ctx context.Context, username string, key []byte, realm RealmInfo) error {
+	return withWorld434(ctx, username, key, realm, nil)
+}
+
+func withWorld434(ctx context.Context, username string, key []byte, realm RealmInfo, after func(*worldWire434) error) error {
 	username = strings.ToUpper(username)
 	if len(username) == 0 || len(username) > 255 || strings.IndexByte(username, 0) >= 0 {
 		return fmt.Errorf("world auth: account length must be 1..255 bytes without NUL")
@@ -48,10 +52,14 @@ func AuthenticateWorld434(ctx context.Context, username string, key []byte, real
 	if err := conn.SetDeadline(deadline); err != nil {
 		return err
 	}
-	return worldAuth434(conn, username, key, realm.ID)
+	return handshake434(conn, username, key, realm.ID, after)
 }
 
 func worldAuth434(conn net.Conn, username string, key []byte, realmID uint32) error {
+	return handshake434(conn, username, key, realmID, nil)
+}
+
+func handshake434(conn net.Conn, username string, key []byte, realmID uint32, after func(*worldWire434) error) error {
 	var size [2]byte
 	if _, err := io.ReadFull(conn, size[:]); err != nil {
 		return fmt.Errorf("server banner: %w", err)
@@ -88,17 +96,22 @@ func worldAuth434(conn net.Conn, username string, key []byte, realmID uint32) er
 	if err := write434(conn, append(packet, body...)); err != nil {
 		return fmt.Errorf("auth session: %w", err)
 	}
-	// No further client packets are sent, so only the receive cipher is needed.
-	decrypt := receiveCrypt434(key)
+	wire := &worldWire434{conn: conn, receive: receiveCrypt434(key), key: key}
 	// TCPP may send unsolicited pre-auth traffic (e.g. Warden). Consume framed
 	// packets without invoking gameplay handlers, under the connection deadline.
 	for packets := 0; packets < 64; packets++ {
-		op, data, err := read434(conn, decrypt)
+		op, data, err := wire.read()
 		if err != nil {
 			return fmt.Errorf("auth response framing/decryption: %w", err)
 		}
 		if op == cataAuthResponse {
-			return response434(data)
+			if err := response434(data); err != nil {
+				return err
+			}
+			if after != nil {
+				return after(wire)
+			}
+			return nil
 		}
 	}
 	return fmt.Errorf("auth response missing after 64 packets")
