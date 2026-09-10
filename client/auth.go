@@ -128,13 +128,13 @@ func (a *AuthClient) sendLogonChallenge() error {
 	// Build payload
 	buf := new(bytes.Buffer)
 	buf.WriteByte(AuthLogonChallenge)
-	buf.WriteByte(3) // error (protocol version)
+	buf.WriteByte(8) // error (protocol version)
 	binary.Write(buf, binary.LittleEndian, uint16(30+len(loginBytes)))
 	buf.Write(gameName[:])
-	buf.WriteByte(3)                                      // version1
+	buf.WriteByte(4)                                      // version1
 	buf.WriteByte(3)                                      // version2
-	buf.WriteByte(5)                                      // version3
-	binary.Write(buf, binary.LittleEndian, uint16(12340)) // build
+	buf.WriteByte(4)                                      // version3
+	binary.Write(buf, binary.LittleEndian, uint16(15595)) // build
 	buf.Write(platform[:])
 	buf.Write(os[:])
 	buf.Write(country[:])
@@ -307,7 +307,7 @@ func (a *AuthClient) requestRealmList() ([]RealmInfo, error) {
 	// Send realm list request
 	buf := new(bytes.Buffer)
 	buf.WriteByte(AuthRealmList)
-	binary.Write(buf, binary.LittleEndian, uint32(0))
+	binary.Write(buf, binary.LittleEndian, uint32(0x1000))
 	if _, err := a.conn.Write(buf.Bytes()); err != nil {
 		return nil, err
 	}

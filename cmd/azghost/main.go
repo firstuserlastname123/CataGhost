@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/azerothcore/AzerothGhost/bot"
+	"github.com/azerothcore/AzerothGhost/client"
 	"github.com/azerothcore/AzerothGhost/config"
 	"github.com/azerothcore/AzerothGhost/orchestrator"
 	"github.com/azerothcore/AzerothGhost/server"
@@ -34,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -198,6 +199,8 @@ foundVerb:
 		runNode(cliCfg)
 	case "orchestrator":
 		runOrchestrator(cliCfg)
+	case "auth":
+		runAuth(cliCfg)
 	case "scenario":
 		runScenario(os.Args[1:], cliCfg) // pass remaining args + loaded config for E2E (auth/data_dir from profile)
 	default:
@@ -206,7 +209,23 @@ foundVerb:
 		os.Exit(1)
 	}
 }
+func runAuth(c config.CLIConfig) {
+	fmt.Println("=== CataGhost Auth Probe ===")
+	fmt.Printf("Connecting as %s to %s...\n", c.Username, c.AuthServer)
 
+	auth := client.NewAuthClient(c.Username, c.Password)
+
+	realms, err := auth.Authenticate(c.AuthServer)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Authentication failed: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Authentication succeeded. Found %d realm(s):\n", len(realms))
+	for i, realm := range realms {
+		fmt.Printf("  [%d] %s -> %s\n", i, realm.Name, realm.Address)
+	}
+}
 func runCLI(c config.CLIConfig) {
 	fmt.Println("=== AzerothGhost CLI ===")
 	fmt.Printf("  user=%s@%s char=%s mode=%s dataDir=%s\n",
