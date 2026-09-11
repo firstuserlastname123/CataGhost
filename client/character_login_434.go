@@ -110,6 +110,12 @@ func awaitLogin434(ctx context.Context, realm *worldWire434, username, expectedI
 }
 
 func awaitLoginWith434(ctx context.Context, realm *worldWire434, username, expectedInstance string, result *CharacterLogin434Result, connect func(context.Context, string, string, []byte, uint64) (*worldWire434, error)) error {
+	return awaitObservedLogin434(ctx, realm, username, expectedInstance, result, connect, nil, nil)
+}
+
+// The observer sees initial packets even when they precede login verification.
+// Only this loop writes required time-sync replies; observers cannot send.
+func awaitObservedLogin434(ctx context.Context, realm *worldWire434, username, expectedInstance string, result *CharacterLogin434Result, connect func(context.Context, string, string, []byte, uint64) (*worldWire434, error), observe func(loginPacket434) error, complete func() (bool, error)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var instance *worldWire434
 	var readers sync.WaitGroup
@@ -142,13 +148,31 @@ func awaitLoginWith434(ctx context.Context, realm *worldWire434, username, expec
 	start(realm, false)
 	verified, resumed, synced := false, false, false
 	started := time.Now()
-	for packets := 0; packets < 512; packets++ {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for packets := 0; packets < 4096; {
+		if verified && synced && resumed {
+			if complete == nil {
+				return nil
+			}
+			if done, err := complete(); err != nil || done {
+				return err
+			}
+		}
 		select {
+		case <-ticker.C:
+			continue
 		case <-ctx.Done():
 			return fmt.Errorf("login deadline/cancellation: %w", ctx.Err())
 		case p := <-events:
+			packets++
 			if p.err != nil {
 				return fmt.Errorf("login transport (instance=%t): %w", p.instance, p.err)
+			}
+			if observe != nil {
+				if err := observe(p); err != nil {
+					return err
+				}
 			}
 			switch p.op {
 			case cataCharacterLoginFailed:
@@ -201,12 +225,9 @@ func awaitLoginWith434(ctx context.Context, realm *worldWire434, username, expec
 				result.TimeSyncCounter = counter
 				synced = true
 			}
-			if verified && synced && resumed {
-				return nil
-			}
 		}
 	}
-	return fmt.Errorf("login proof missing after 512 packets")
+	return fmt.Errorf("login/observation proof missing after 4096 packets")
 }
 
 func verifyWorld434(b []byte, result *CharacterLogin434Result) error {

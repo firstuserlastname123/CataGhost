@@ -119,8 +119,9 @@ func readClient434(conn net.Conn, c *rc4.Cipher) (uint32, []byte, error) {
 }
 
 func TestLogin434SyntheticTwoSockets(t *testing.T) {
-	for _, compressed := range []bool{false, true} {
-		t.Run(fmt.Sprint(compressed), func(t *testing.T) {
+	for _, tc := range []struct{ compressed, observe bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+		t.Run(fmt.Sprint(tc), func(t *testing.T) {
+			compressed := tc.compressed
 			fixture := redirectFixture434(t)
 			realmLn, e := net.Listen("tcp", "127.0.0.1:0")
 			if e != nil {
@@ -134,7 +135,11 @@ func TestLogin434SyntheticTwoSockets(t *testing.T) {
 			defer instanceLn.Close()
 			doneRealm := make(chan error, 1)
 			doneInstance := make(chan error, 1)
-			go func() { doneInstance <- mockLoginInstance434(instanceLn, compressed) }()
+			var updates [][]byte
+			if tc.observe {
+				updates = append(updates, updateFixture434(livingFixture434(2, 4, true), livingFixture434(0xf130000100000003, 3, true)))
+			}
+			go func() { doneInstance <- mockLoginInstance434(instanceLn, compressed, updates...) }()
 			go func() {
 				doneRealm <- mockWorldThen434(realmLn, func(conn net.Conn, send *rc4.Cipher) error {
 					seed, _ := hex.DecodeString("c2b3723cc6aed9b5343c53ee2f4367ce")
@@ -171,13 +176,22 @@ func TestLogin434SyntheticTwoSockets(t *testing.T) {
 				if e := w.send(cataPlayerLogin, loginGUID434(result.Character.GUID)); e != nil {
 					return e
 				}
-				return awaitLoginWith434(ctx, w, "ACCOUNT", "127.0.0.1:8087", &result, func(ctx context.Context, address, user string, key []byte, link uint64) (*worldWire434, error) {
+				connect := func(ctx context.Context, address, user string, key []byte, link uint64) (*worldWire434, error) {
 					if address != "127.0.0.1:8087" {
 						return nil, fmt.Errorf("wrong redirect")
 					}
 					// Only the synthetic test redirects dialing to an ephemeral listener.
 					return openInstance434(ctx, instanceLn.Addr().String(), user, key, link)
-				})
+				}
+				if !tc.observe {
+					return awaitLoginWith434(ctx, w, "ACCOUNT", "127.0.0.1:8087", &result, connect)
+				}
+				s := WorldState434Result{Store: ObjectStore434{PlayerGUID: result.Character.GUID}, Opcodes: make(map[uint16]int), WorldVariables: make(map[uint32]int32)}
+				err := awaitObservedLogin434(ctx, w, "ACCOUNT", "127.0.0.1:8087", &result, connect, s.observe, func() (bool, error) { s.Login = result; return s.playerReady() })
+				if err == nil && (len(s.Store.Objects()) != 2 || s.Opcodes[cataUpdateObject] != 1) {
+					return fmt.Errorf("initial updates were lost")
+				}
+				return err
 			})
 			if err != nil {
 				t.Error(err)
@@ -198,7 +212,7 @@ func TestLogin434SyntheticTwoSockets(t *testing.T) {
 	}
 }
 
-func mockLoginInstance434(ln net.Listener, compressed bool) error {
+func mockLoginInstance434(ln net.Listener, compressed bool, updates ...[]byte) error {
 	conn, e := ln.Accept()
 	if e != nil {
 		return e
@@ -248,18 +262,26 @@ func mockLoginInstance434(ln net.Listener, compressed bool) error {
 		verify = binary.LittleEndian.AppendUint32(verify, math.Float32bits(f))
 	}
 	wire := frame434(0x0140, nil, send)
-	if compressed {
-		var zbuf bytes.Buffer
-		z := zlib.NewWriter(&zbuf)
-		z.Write(verify)
-		z.Flush()
-		body := binary.LittleEndian.AppendUint32(nil, 20)
-		body = append(body, zbuf.Bytes()...)
-		wire = append(wire, frame434(0xa005, body, send)...)
-		z.Close()
-	} else {
-		wire = append(wire, frame434(0x2005, verify, send)...)
+	var zbuf bytes.Buffer
+	z := zlib.NewWriter(&zbuf)
+	defer z.Close()
+	appendPacket := func(op uint16, body []byte) {
+		if compressed {
+			start := zbuf.Len()
+			z.Write(body)
+			z.Flush()
+			payload := binary.LittleEndian.AppendUint32(nil, uint32(len(body)))
+			payload = append(payload, zbuf.Bytes()[start:]...)
+			wire = append(wire, frame434(op|0x8000, payload, send)...)
+		} else {
+			wire = append(wire, frame434(op, body, send)...)
+		}
 	}
+	// Initial object updates intentionally precede LOGIN_VERIFY_WORLD/time sync.
+	for _, body := range updates {
+		appendPacket(0x4715, body)
+	}
+	appendPacket(0x2005, verify)
 	wire = append(wire, frame434(0x3ca4, []byte{7, 0, 0, 0}, send)...)
 	for _, x := range wire {
 		if e := write434(conn, []byte{x}); e != nil {
