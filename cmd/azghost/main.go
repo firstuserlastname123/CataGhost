@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -228,6 +228,11 @@ foundVerb:
 	case "movement":
 		if err := runMovement(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
 			fmt.Fprintf(os.Stderr, "Movement verification failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "navigation":
+		if err := runNavigation(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
+			fmt.Fprintf(os.Stderr, "Navigation verification failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "scenario":
