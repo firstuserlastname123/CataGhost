@@ -213,6 +213,10 @@ func TestLogin434SyntheticTwoSockets(t *testing.T) {
 }
 
 func mockLoginInstance434(ln net.Listener, compressed bool, updates ...[]byte) error {
+	return mockInstanceTraffic434(ln, compressed, nil, updates...)
+}
+
+func mockInstanceTraffic434(ln net.Listener, compressed bool, afterAck func(net.Conn, *rc4.Cipher, func(uint16, []byte) error) error, updates ...[]byte) error {
 	conn, e := ln.Accept()
 	if e != nil {
 		return e
@@ -291,6 +295,11 @@ func mockLoginInstance434(ln net.Listener, compressed bool, updates ...[]byte) e
 	op, b, e = readClient434(conn, recv)
 	if e != nil || op != 0x3b0c || len(b) != 8 || binary.LittleEndian.Uint32(b) != 7 {
 		return fmt.Errorf("required time sync ack missing: %x %v", op, e)
+	}
+	if afterAck != nil {
+		if err := afterAck(conn, recv, func(op uint16, body []byte) error { wire = nil; appendPacket(op, body); return write434(conn, wire) }); err != nil {
+			return err
+		}
 	}
 	var extra [1]byte
 	n, e := conn.Read(extra[:])
