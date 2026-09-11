@@ -116,6 +116,12 @@ func awaitLoginWith434(ctx context.Context, realm *worldWire434, username, expec
 // The observer sees initial packets even when they precede login verification.
 // Only this loop writes required time-sync replies; observers cannot send.
 func awaitObservedLogin434(ctx context.Context, realm *worldWire434, username, expectedInstance string, result *CharacterLogin434Result, connect func(context.Context, string, string, []byte, uint64) (*worldWire434, error), observe func(loginPacket434) error, complete func() (bool, error)) error {
+	return awaitSession434(ctx, realm, username, expectedInstance, result, connect, observe, complete, nil)
+}
+
+// A bounded movement controller can write only through the same session loop
+// that owns time-sync replies, preserving encryption and timestamp continuity.
+func awaitSession434(ctx context.Context, realm *worldWire434, username, expectedInstance string, result *CharacterLogin434Result, connect func(context.Context, string, string, []byte, uint64) (*worldWire434, error), observe func(loginPacket434) error, complete func() (bool, error), tick func(uint32, func(uint16, []byte) error) error) error {
 	ctx, cancel := context.WithCancel(ctx)
 	var instance *worldWire434
 	var readers sync.WaitGroup
@@ -151,7 +157,15 @@ func awaitObservedLogin434(ctx context.Context, realm *worldWire434, username, e
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for packets := 0; packets < 4096; {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("session canceled: %w", err)
+		}
 		if verified && synced && resumed {
+			if tick != nil {
+				if err := tick(uint32(time.Since(started).Milliseconds()), instance.send); err != nil {
+					return err
+				}
+			}
 			if complete == nil {
 				return nil
 			}

@@ -18,6 +18,7 @@ type Object434 struct {
 	ThisIsYou bool
 	Map       uint16
 	Position  *Position434
+	Movement  *Movement434
 	Fields    map[uint16]uint32
 	Revision  uint64
 }
@@ -43,6 +44,10 @@ func (s *ObjectStore434) Objects() []Object434 {
 		if o.Position != nil {
 			p := *o.Position
 			copyObject.Position = &p
+		}
+		if o.Movement != nil {
+			m := o.Movement.clone()
+			copyObject.Movement = &m
 		}
 		result = append(result, copyObject)
 	}
@@ -86,6 +91,7 @@ func (s *ObjectStore434) ApplyUpdate(b []byte) error {
 			o.Created = true
 			o.ThisIsYou = d.self
 			o.Position = d.position
+			o.Movement = d.movement
 		}
 		for k, v := range d.fields {
 			o.Fields[k] = v
@@ -149,6 +155,8 @@ func (s *WorldState434Result) observe(p loginPacket434) error {
 		return s.Store.ApplyUpdate(p.body)
 	case cataDestroyObject:
 		return s.Store.ApplyDestroy(p.body)
+	case cataMoveUpdate:
+		return s.Store.ApplyMovement(p.body)
 	case cataInitWorldStates:
 		r := newObjectReader434(p.body)
 		m := r.u32()

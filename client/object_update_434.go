@@ -23,6 +23,7 @@ type objectDelta434 struct {
 	typeID   uint8
 	fields   map[uint16]uint32
 	position *Position434
+	movement *Movement434
 	self     bool
 	removed  []uint64
 }
@@ -123,7 +124,7 @@ func parseObjectUpdate434(b []byte) (uint16, []objectDelta434, error) {
 				if d.typeID > 8 {
 					return 0, nil, fmt.Errorf("unknown object type %d", d.typeID)
 				}
-				d.position, d.self = r.movement(d.guid)
+				d.position, d.self, d.movement = r.movement(d.guid)
 			}
 			n := int(r.u8())
 			if !r.bounded(n, 4) {
@@ -208,7 +209,8 @@ func (r *objectReader434) splineData(s spline434) {
 
 // movement consumes the full build-15595 create movement block. Optional
 // transport/spline/animation data is decoded for framing but not simulated.
-func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
+func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool, *Movement434) {
+	var state *Movement434
 	r.flag()
 	r.flag()
 	rotation := r.flag()
@@ -229,15 +231,17 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 	var goTime2, goVehicleID bool
 	var s spline434
 	if living {
+		state = &Movement434{GUID: outerGUID, HasOrientation: true}
 		flags := !r.flag()
 		orientation = !r.flag()
 		r.mask(&g, 7, 3, 2)
 		if flags {
-			r.bits(30)
+			state.Flags = r.bits(30)
 		}
 		r.flag()
 		pitch = !r.flag()
 		spline = r.flag()
+		state.Spline = spline
 		fall = r.flag()
 		elevation = !r.flag()
 		r.mask(&g, 5)
@@ -261,7 +265,7 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 		r.mask(&g, 0, 1)
 		r.flag()
 		if !r.flag() {
-			r.bits(12)
+			state.Flags2 = uint16(r.bits(12))
 		}
 	}
 	if goTransport {
@@ -282,7 +286,7 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 	}
 	r.align()
 	if !r.bounded(pauses, 4) {
-		return nil, self
+		return nil, self, state
 	}
 	r.take(pauses * 4)
 	var p *Position434
@@ -291,15 +295,17 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 		r.seq(&g, 4)
 		r.f32()
 		if fall {
+			state.Fall = &Fall434{}
 			if direction {
-				r.take(12)
+				state.Fall.Direction = &FallDirection434{HorizontalSpeed: r.f32(), SinAngle: r.f32(), CosAngle: r.f32()}
 			}
-			r.u32()
-			r.f32()
+			state.Fall.Time = r.u32()
+			state.Fall.VerticalSpeed = r.f32()
 		}
 		r.f32()
 		if elevation {
-			r.f32()
+			v := r.f32()
+			state.SplineElevation = &v
 		}
 		if spline {
 			r.splineData(s)
@@ -307,22 +313,26 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 		p.Z = r.f32()
 		r.seq(&g, 5)
 		if transport {
+			state.Transport = &Transport434{}
 			r.seq(&t, 5, 7)
-			r.u32()
-			r.f32()
+			state.Transport.Time = r.u32()
+			state.Transport.Position.Orientation = r.f32()
 			if time2 {
-				r.u32()
+				v := r.u32()
+				state.Transport.Time2 = &v
 			}
-			r.f32()
-			r.f32()
+			state.Transport.Position.Y = r.f32()
+			state.Transport.Position.X = r.f32()
 			r.seq(&t, 3)
-			r.f32()
+			state.Transport.Position.Z = r.f32()
 			r.seq(&t, 0)
 			if vehicleID {
-				r.u32()
+				v := r.u32()
+				state.Transport.VehicleID = &v
 			}
-			r.u8()
+			state.Transport.Seat = int8(r.u8())
 			r.seq(&t, 1, 6, 2, 4)
+			state.Transport.GUID = binary.LittleEndian.Uint64(t[:])
 		}
 		p.X = r.f32()
 		r.f32()
@@ -332,7 +342,8 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 		r.seq(&g, 7, 1, 2)
 		r.f32()
 		if hasTime {
-			r.u32()
+			state.Timestamp = r.u32()
+			state.HasTimestamp = true
 		}
 		r.f32()
 		r.seq(&g, 6)
@@ -340,9 +351,10 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 		if orientation {
 			p.Orientation = r.f32()
 		}
-		r.f32()
+		state.RunSpeed = r.f32()
 		if pitch {
-			r.f32()
+			v := r.f32()
+			state.Pitch = &v
 		}
 		r.f32()
 		if r.err == nil && binary.LittleEndian.Uint64(g[:]) != outerGUID {
@@ -394,5 +406,8 @@ func (r *objectReader434) movement(outerGUID uint64) (*Position434, bool) {
 	if p != nil && !finitePosition434(p) {
 		r.err = fmt.Errorf("non-finite object position")
 	}
-	return p, self
+	if state != nil && p != nil {
+		state.Position = *p
+	}
+	return p, self, state
 }
