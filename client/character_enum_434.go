@@ -48,34 +48,53 @@ type CharacterRoster434 struct {
 func EnumerateCharacters434(ctx context.Context, username string, key []byte, realm RealmInfo) (CharacterRoster434, error) {
 	var roster CharacterRoster434
 	err := withWorld434(ctx, username, key, realm, func(w *worldWire434) error {
-		// This is the first encrypted outbound header; the auth-session was plaintext.
-		h := hmac.New(sha1.New, []byte{0xc2, 0xb3, 0x72, 0x3c, 0xc6, 0xae, 0xd9, 0xb5, 0x34, 0x3c, 0x53, 0xee, 0x2f, 0x43, 0x67, 0xce})
-		h.Write(w.key)
-		cipher, _ := rc4.NewCipher(h.Sum(nil))
-		drop := make([]byte, 1024)
-		cipher.XORKeyStream(drop, drop)
-		packet := binary.BigEndian.AppendUint16(nil, 4)
-		packet = binary.LittleEndian.AppendUint32(packet, cataEnumCharacters)
-		cipher.XORKeyStream(packet, packet)
-		if err := write434(w.conn, packet); err != nil {
-			return fmt.Errorf("character enumeration request: %w", err)
-		}
-		for i := 0; i < 64; i++ {
-			op, data, err := w.read()
-			if err != nil {
-				return fmt.Errorf("character enumeration response: %w", err)
-			}
-			if op == cataEnumCharactersResult {
-				roster, err = parseRoster434(data)
-				return err
-			}
-		}
-		return fmt.Errorf("character enumeration response missing after 64 packets")
+		var err error
+		roster, err = enumerateOnWorld434(w)
+		return err
 	})
 	return roster, err
 }
 
+func enumerateOnWorld434(w *worldWire434) (CharacterRoster434, error) {
+	if err := w.send(cataEnumCharacters, nil); err != nil {
+		return CharacterRoster434{}, fmt.Errorf("character enumeration request: %w", err)
+	}
+	for i := 0; i < 64; i++ {
+		op, data, err := w.read()
+		if err != nil {
+			return CharacterRoster434{}, fmt.Errorf("character enumeration response: %w", err)
+		}
+		if op == cataEnumCharactersResult {
+			return parseRoster434(data)
+		}
+	}
+	return CharacterRoster434{}, fmt.Errorf("character enumeration response missing after 64 packets")
+}
+
+func packetCrypt434(key, seed []byte) *rc4.Cipher {
+	h := hmac.New(sha1.New, seed)
+	h.Write(key)
+	c, _ := rc4.NewCipher(h.Sum(nil))
+	drop := make([]byte, 1024)
+	c.XORKeyStream(drop, drop)
+	return c
+}
+
+func (w *worldWire434) send(op uint16, body []byte) error {
+	if len(body)+4 >= 10240 {
+		return fmt.Errorf("outbound packet exceeds server limit")
+	}
+	if w.transmit == nil {
+		w.transmit = packetCrypt434(w.key, []byte{0xc2, 0xb3, 0x72, 0x3c, 0xc6, 0xae, 0xd9, 0xb5, 0x34, 0x3c, 0x53, 0xee, 0x2f, 0x43, 0x67, 0xce})
+	}
+	header := binary.BigEndian.AppendUint16(nil, uint16(len(body)+4))
+	header = binary.LittleEndian.AppendUint32(header, uint32(op))
+	w.transmit.XORKeyStream(header, header)
+	return write434(w.conn, append(header, body...))
+}
+
 type worldWire434 struct {
+	transmit   *rc4.Cipher
 	conn       net.Conn
 	receive    *rc4.Cipher
 	key        []byte

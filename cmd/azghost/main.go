@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -58,6 +58,8 @@ foundVerb:
 	authServer := flag.String("auth-server", "127.0.0.1:3724", "Auth server address (host:port)")
 	charName := flag.String("char-name", "Loadtst", "Character name")
 	realmName := flag.String("realm-name", "", "Exact realm name required by world-auth/char-enum")
+	loginName := flag.String("login-character", "", "Exact existing character name for char-login")
+	instanceAddress := flag.String("expected-instance-address", "", "Required instance redirect address for char-login")
 	expectedWorld := flag.String("expected-world-address", "", "Required advertised world address for world-auth/char-enum (host:port)")
 	realmIndex := flag.Int("realm-index", 0, "Realm index (0-based)")
 	listenAddr := flag.String("listen", ":8888", "HTTP server listen address (node mode)")
@@ -211,6 +213,11 @@ foundVerb:
 	case "char-enum":
 		if err := runCharacterEnum(cliCfg, *realmName, *expectedWorld); err != nil {
 			fmt.Fprintf(os.Stderr, "Character enumeration failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "char-login":
+		if err := runCharacterLogin(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
+			fmt.Fprintf(os.Stderr, "Character login failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "scenario":
