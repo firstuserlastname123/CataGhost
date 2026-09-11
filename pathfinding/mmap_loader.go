@@ -24,7 +24,8 @@ const (
 // MMapManager manages lazy loading of navigation meshes and their tiles.
 // It is safe for concurrent use.
 type MMapManager struct {
-	mmapsDir string
+	mmapsDir     string
+	cataclysm434 bool
 
 	mu     sync.RWMutex
 	meshes map[uint32]*mapData // mapID -> mapData
@@ -199,7 +200,12 @@ func (m *MMapManager) loadTile(md *mapData, mapID uint32, x, y int32) error {
 	defer file.Close()
 
 	// Read the MmapTileHeader.
-	headerBuf := make([]byte, mmapTileHeaderSize)
+	headerSize, expectedVersion := mmapTileHeaderSize, uint32(mmapVersion)
+	if m.cataclysm434 {
+		headerSize = 20
+		expectedVersion = 14
+	}
+	headerBuf := make([]byte, headerSize)
 	if _, err := io.ReadFull(file, headerBuf); err != nil {
 		return fmt.Errorf("could not read header from '%s': %w", fileName, err)
 	}
@@ -210,11 +216,20 @@ func (m *MMapManager) loadTile(md *mapData, mapID uint32, x, y int32) error {
 	}
 
 	version := binary.LittleEndian.Uint32(headerBuf[8:12])
-	if version != mmapVersion {
-		return fmt.Errorf("version mismatch in '%s': got %d, expected %d", fileName, version, mmapVersion)
+	if version != expectedVersion {
+		return fmt.Errorf("version mismatch in '%s': got %d, expected %d", fileName, version, expectedVersion)
 	}
 
 	dataSize := binary.LittleEndian.Uint32(headerBuf[12:16])
+	if m.cataclysm434 {
+		info, err := file.Stat()
+		if err != nil {
+			return err
+		}
+		if binary.LittleEndian.Uint32(headerBuf[4:8]) != 7 || dataSize > 64<<20 || int64(dataSize) != info.Size()-int64(headerSize) {
+			return fmt.Errorf("invalid Cataclysm tile version/size: %s", fileName)
+		}
+	}
 
 	data := make([]byte, dataSize)
 	if _, err := io.ReadFull(file, data); err != nil {
@@ -226,10 +241,25 @@ func (m *MMapManager) loadTile(md *mapData, mapID uint32, x, y int32) error {
 	if int(dataSize) < dtMeshHeaderSize {
 		return fmt.Errorf("tile data too small in '%s'", fileName)
 	}
+	if m.cataclysm434 {
+		if err := validateTile434(data); err != nil {
+			return fmt.Errorf("%s: %w", fileName, err)
+		}
+	}
 
 	var tileRef detour.DtTileRef
 	if status := md.navMesh.AddTile(data, int(dataSize), detour.DT_TILE_FREE_DATA, 0, &tileRef); detour.DtStatusFailed(status) {
 		return fmt.Errorf("could not add tile %03d[%02d,%02d] to navmesh, status: %d", mapID, x, y, status)
+	}
+	if m.cataclysm434 {
+		// Private in-memory mesh only: the conservative ground probe must not
+		// traverse scripted/off-mesh links (doors, jumps, transports).
+		for i := range md.navMesh.GetTileByRef(tileRef).Polys {
+			p := &md.navMesh.GetTileByRef(tileRef).Polys[i]
+			if p.GetType() != detour.DT_POLYTYPE_GROUND {
+				p.Flags = 0
+			}
+		}
 	}
 
 	md.loadedTiles[packed] = true
