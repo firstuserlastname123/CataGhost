@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -218,6 +218,11 @@ foundVerb:
 	case "char-login":
 		if err := runCharacterLogin(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
 			fmt.Fprintf(os.Stderr, "Character login failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "world-state":
+		if err := runWorldState(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
+			fmt.Fprintf(os.Stderr, "World-state observation failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "scenario":
