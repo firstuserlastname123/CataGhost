@@ -60,30 +60,9 @@ func worldAuth434(conn net.Conn, username string, key []byte, realmID uint32) er
 }
 
 func handshake434(conn net.Conn, username string, key []byte, realmID uint32, after func(*worldWire434) error) error {
-	var size [2]byte
-	if _, err := io.ReadFull(conn, size[:]); err != nil {
-		return fmt.Errorf("server banner: %w", err)
-	}
-	if binary.BigEndian.Uint16(size[:]) != uint16(len(cataServerBanner)) {
-		return fmt.Errorf("invalid server banner length")
-	}
-	banner := make([]byte, len(cataServerBanner))
-	if _, err := io.ReadFull(conn, banner); err != nil {
-		return fmt.Errorf("server banner: %w", err)
-	}
-	if string(banner) != cataServerBanner {
-		return fmt.Errorf("invalid server banner")
-	}
-	binary.BigEndian.PutUint16(size[:], uint16(len(cataClientBanner)))
-	if err := write434(conn, append(size[:], cataClientBanner...)); err != nil {
-		return fmt.Errorf("client banner: %w", err)
-	}
-	op, challenge, err := read434(conn, nil)
+	challenge, err := challenge434(conn)
 	if err != nil {
-		return fmt.Errorf("auth challenge: %w", err)
-	}
-	if op != cataAuthChallenge || len(challenge) != 37 {
-		return fmt.Errorf("invalid auth challenge: opcode 0x%04X, length %d", op, len(challenge))
+		return err
 	}
 	var seed [4]byte
 	if _, err := rand.Read(seed[:]); err != nil {
@@ -226,4 +205,33 @@ func response434(b []byte) error {
 		return fmt.Errorf("auth success missing account information")
 	}
 	return nil
+}
+
+func challenge434(conn net.Conn) ([]byte, error) {
+	var size [2]byte
+	if _, err := io.ReadFull(conn, size[:]); err != nil {
+		return nil, fmt.Errorf("server banner: %w", err)
+	}
+	if binary.BigEndian.Uint16(size[:]) != uint16(len(cataServerBanner)) {
+		return nil, fmt.Errorf("invalid server banner length")
+	}
+	banner := make([]byte, len(cataServerBanner))
+	if _, err := io.ReadFull(conn, banner); err != nil {
+		return nil, fmt.Errorf("server banner: %w", err)
+	}
+	if string(banner) != cataServerBanner {
+		return nil, fmt.Errorf("invalid server banner")
+	}
+	binary.BigEndian.PutUint16(size[:], uint16(len(cataClientBanner)))
+	if err := write434(conn, append(size[:], cataClientBanner...)); err != nil {
+		return nil, fmt.Errorf("client banner: %w", err)
+	}
+	op, challenge, err := read434(conn, nil)
+	if err != nil {
+		return nil, fmt.Errorf("auth challenge: %w", err)
+	}
+	if op != cataAuthChallenge || len(challenge) != 37 {
+		return nil, fmt.Errorf("invalid auth challenge: opcode 0x%04X, length %d", op, len(challenge))
+	}
+	return challenge, nil
 }
