@@ -33,6 +33,9 @@ func distance434(a, b pathfinding.Point3D) float64 {
 }
 
 func validateRoute434(start, dest pathfinding.Point3D, r *pathfinding.PathResult) ([]Position434, error) {
+	return validateBoundedRoute434(start, dest, r, 10.5, 4, 15, 24)
+}
+func validateBoundedRoute434(start, dest pathfinding.Point3D, r *pathfinding.PathResult, maxDistance, minLength, maxLength float64, maxSegments int) ([]Position434, error) {
 	for _, p := range []pathfinding.Point3D{start, dest} {
 		if !finitePosition434(&Position434{X: p.X, Y: p.Y, Z: p.Z}) {
 			return nil, fmt.Errorf("non-finite route request")
@@ -44,13 +47,13 @@ func validateRoute434(start, dest pathfinding.Point3D, r *pathfinding.PathResult
 	if distance434(start, dest) < 0.25 {
 		return nil, fmt.Errorf("already at destination; nontrivial route required")
 	}
-	if distance434(start, dest) > 10.5 {
+	if distance434(start, dest) > maxDistance {
 		return nil, fmt.Errorf("destination exceeds short-probe limit")
 	}
 	if distance434(start, r.Points[0]) > 1 || distance434(dest, r.Points[len(r.Points)-1]) > 0.75 {
 		return nil, fmt.Errorf("route endpoints do not match request")
 	}
-	if length := r.PathLength(); math.IsNaN(float64(length)) || length < 4 || length > 15 {
+	if length := r.PathLength(); math.IsNaN(float64(length)) || float64(length) < minLength || float64(length) > maxLength {
 		return nil, fmt.Errorf("route length outside conservative limits")
 	}
 	var segments []Position434
@@ -84,7 +87,7 @@ func validateRoute434(start, dest pathfinding.Point3D, r *pathfinding.PathResult
 		}
 		previous = p
 	}
-	if len(segments) < 2 || len(segments) > 24 {
+	if len(segments) < 2 || len(segments) > maxSegments {
 		return nil, fmt.Errorf("invalid route segment count")
 	}
 	return segments, nil
@@ -102,6 +105,8 @@ type navigationController434 struct {
 	stage                         int
 	readyAt, startedAt, stoppedAt uint32
 	segmentStart                  Position434
+	destination                   func(*WorldState434Result) (pathfinding.Point3D, error)
+	validate                      func(pathfinding.Point3D, pathfinding.Point3D, *pathfinding.PathResult) ([]Position434, error)
 }
 
 func (c *navigationController434) tick(now uint32, send func(uint16, []byte) error) error {
@@ -137,6 +142,13 @@ func (c *navigationController434) tick(now uint32, send func(uint16, []byte) err
 		a.Requested = point434(a.Initial.Position)
 		a.Requested.X += float32(7 * math.Cos(float64(a.Initial.Position.Orientation)))
 		a.Requested.Y += float32(7 * math.Sin(float64(a.Initial.Position.Orientation)))
+		if c.destination != nil {
+			var err error
+			a.Requested, err = c.destination(&a.World)
+			if err != nil {
+				return err
+			}
+		}
 		start, dest, mapID := point434(a.Initial.Position), a.Requested, uint32(p.Map)
 		c.query = make(chan routeQuery434, 1)
 		go func() { r, err := c.finder.FindPath(mapID, start, dest); c.query <- routeQuery434{r, err} }()
@@ -149,7 +161,11 @@ func (c *navigationController434) tick(now uint32, send func(uint16, []byte) err
 			if query.err != nil {
 				return fmt.Errorf("MMap query: %w", query.err)
 			}
-			segments, err := validateRoute434(point434(a.Initial.Position), a.Requested, query.result)
+			validator := c.validate
+			if validator == nil {
+				validator = validateRoute434
+			}
+			segments, err := validator(point434(a.Initial.Position), a.Requested, query.result)
 			if err != nil {
 				return err
 			}
