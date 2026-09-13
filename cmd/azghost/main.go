@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation", "npc-interaction":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation", "npc-interaction", "quest-acceptance", "quest-reconnect":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -60,6 +60,7 @@ foundVerb:
 	realmName := flag.String("realm-name", "", "Exact realm name required by world-auth/char-enum")
 	loginName := flag.String("login-character", "", "Exact existing character name for char-login")
 	instanceAddress := flag.String("expected-instance-address", "", "Required instance redirect address for char-login")
+	inspectedQuest := flag.Uint("inspected-quest-id", 0, "Quest probe: zero inspects details only; nonzero accepts exactly that rediscovered quest")
 	expectedWorld := flag.String("expected-world-address", "", "Required advertised world address for world-auth/char-enum (host:port)")
 	realmIndex := flag.Int("realm-index", 0, "Realm index (0-based)")
 	listenAddr := flag.String("listen", ":8888", "HTTP server listen address (node mode)")
@@ -233,6 +234,20 @@ foundVerb:
 	case "npc-interaction":
 		if err := runNPCInteraction(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
 			fmt.Fprintf(os.Stderr, "NPC interaction failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "quest-acceptance":
+		if uint64(*inspectedQuest) > 0xffffffff {
+			fmt.Fprintln(os.Stderr, "Quest ID exceeds uint32")
+			os.Exit(1)
+		}
+		if err := runQuestAcceptance(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress, uint32(*inspectedQuest)); err != nil {
+			fmt.Fprintf(os.Stderr, "Quest acceptance failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "quest-reconnect":
+		if err := runQuestReconnect(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress, uint32(*inspectedQuest)); err != nil {
+			fmt.Fprintf(os.Stderr, "Quest reconnect verification failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "navigation":

@@ -205,6 +205,9 @@ type NPCCandidate434 struct {
 }
 
 func npcCandidates434(s *ObjectStore434, f *NPCFactions434, rep []reputation434) []NPCCandidate434 {
+	return npcCandidatesWithin434(s, f, rep, 4)
+}
+func npcCandidatesWithin434(s *ObjectStore434, f *NPCFactions434, rep []reputation434, minDistance float64) []NPCCandidate434 {
 	p := s.objects[s.PlayerGUID]
 	if p == nil || p.Position == nil || f == nil {
 		return nil
@@ -221,7 +224,7 @@ func npcCandidates434(s *ObjectStore434, f *NPCFactions434, rep []reputation434)
 			continue
 		}
 		d := distance434(point434(*p.Position), point434(*o.Position))
-		if d < 4 || d > 40 {
+		if d < minDistance || d > 40 {
 			continue
 		}
 		out = append(out, NPCCandidate434{o.GUID, o.Fields[FieldEntry434], o.Fields[FieldNPCFlags434], o.Fields[FieldHealth434], o.Fields[FieldFaction434], *o.Position, d})
