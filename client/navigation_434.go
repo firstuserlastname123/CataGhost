@@ -74,7 +74,7 @@ func validateBoundedRoute434(start, dest pathfinding.Point3D, r *pathfinding.Pat
 			continue
 		}
 		if math.Abs(dz)/horizontal > 0.3 {
-			return nil, fmt.Errorf("route is too steep for initial ground probe")
+			return nil, fmt.Errorf("route is too steep for initial ground probe: point=%d from=%+v to=%+v delta=(%.6f,%.6f,%.6f) horizontal=%.6f grade=%.6f limit=0.3", i, previous, p, dx, dy, dz, horizontal, math.Abs(dz)/horizontal)
 		}
 		steps := int(math.Ceil(math.Sqrt(dx*dx + dy*dy + dz*dz)))
 		facing := math.Atan2(dy, dx)
@@ -164,6 +164,9 @@ func (c *navigationController434) tick(now uint32, send func(uint16, []byte) err
 			validator := c.validate
 			if validator == nil {
 				validator = validateRoute434
+			}
+			if query.result != nil {
+				a.RawPath = pathfinding.PathResult{Type: query.result.Type, Points: append([]pathfinding.Point3D(nil), query.result.Points...)}
 			}
 			segments, err := validator(point434(a.Initial.Position), a.Requested, query.result)
 			if err != nil {

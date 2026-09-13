@@ -22,6 +22,9 @@ type NPCInteraction434 struct {
 }
 
 func ApproachNPC434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, finder RouteFinder434, factions *NPCFactions434) (NPCApproach434, error) {
+	return approachNPC434(ctx, user, key, realm, name, instance, finder, factions, nil)
+}
+func approachNPC434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, finder RouteFinder434, factions *NPCFactions434, choose func(*WorldState434Result, []reputation434) (NPCCandidate434, Position434, error)) (NPCApproach434, error) {
 	a := NPCApproach434{Navigation: NavigationAttempt434{World: WorldState434Result{Opcodes: map[uint16]int{}, WorldVariables: map[uint32]int32{}}}}
 	if finder == nil || factions == nil || name == "" || instance == "" {
 		return a, fmt.Errorf("explicit NPC approach inputs required")
@@ -56,6 +59,12 @@ func ApproachNPC434(ctx context.Context, user string, key []byte, realm RealmInf
 		}
 		controller := navigationController434{ctx: ctx, result: &a.Navigation, finder: finder}
 		controller.destination = func(s *WorldState434Result) (pathfinding.Point3D, error) {
+			if choose != nil {
+				var dest Position434
+				var err error
+				a.NPC, dest, err = choose(s, rep)
+				return point434(dest), err
+			}
 			candidates := npcCandidates434(&s.Store, factions, rep)
 			if len(candidates) == 0 {
 				return pathfinding.Point3D{}, fmt.Errorf("no proven friendly stationary gossip NPC within 40 units")
@@ -76,6 +85,15 @@ func ApproachNPC434(ctx context.Context, user string, key []byte, realm RealmInf
 // Reconnect before Hello: the fresh player snapshot must independently prove
 // the approach, and the same living friendly NPC must still be in range.
 func InteractNPC434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, factions *NPCFactions434, approach NPCApproach434) (NPCInteraction434, error) {
+	return interactNPC434(ctx, user, key, realm, name, instance, factions, approach, nil)
+}
+
+type npcConversation434 interface {
+	observe(loginPacket434, *NPCInteraction434) error
+	tick(uint32, func(uint16, []byte) error, *NPCInteraction434) (bool, error)
+}
+
+func interactNPC434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, factions *NPCFactions434, approach NPCApproach434, conversation npcConversation434) (NPCInteraction434, error) {
 	a := NPCInteraction434{World: WorldState434Result{Opcodes: map[uint16]int{}, WorldVariables: map[uint32]int32{}}}
 	if factions == nil || name == "" || instance == "" {
 		return a, fmt.Errorf("explicit NPC interaction inputs required")
@@ -121,13 +139,28 @@ func InteractNPC434(ctx context.Context, user string, key []byte, realm RealmInf
 			if p.op == cataGossipComplete && !received {
 				return fmt.Errorf("gossip closed without proving intended NPC response")
 			}
-			return a.World.observe(p)
+			if err := a.World.observe(p); err != nil {
+				return err
+			}
+			if conversation != nil {
+				return conversation.observe(p, &a)
+			}
+			return nil
 		}
 		tick := func(now uint32, send func(uint16, []byte) error) error {
 			if closed {
 				return nil
 			}
 			if received { // No client gossip-close opcode exists in this build. Clear target and disconnect.
+				if conversation != nil {
+					done, err := conversation.tick(now, send, &a)
+					if err != nil {
+						return err
+					}
+					if !done {
+						return nil
+					}
+				}
 				if err := send(cataSetSelection, targetGUID434(0)); err != nil {
 					return err
 				}
