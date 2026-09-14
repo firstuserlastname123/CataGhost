@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation", "npc-interaction", "quest-acceptance", "quest-reconnect", "quest-progress":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation", "npc-interaction", "quest-acceptance", "quest-reconnect", "quest-progress", "objective-preflight":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -234,6 +234,11 @@ foundVerb:
 	case "npc-interaction":
 		if err := runNPCInteraction(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
 			fmt.Fprintf(os.Stderr, "NPC interaction failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "objective-preflight":
+		if err := runObjectivePreflight434(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress, uint32(*inspectedQuest)); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	case "quest-progress":
