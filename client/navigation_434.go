@@ -249,6 +249,15 @@ func (c *navigationController434) send(send func(uint16, []byte) error, op uint1
 }
 
 func NavigateCharacter434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, finder RouteFinder434) (NavigationAttempt434, error) {
+	return NavigateCharacterTo434(ctx, user, key, realm, name, instance, finder, nil)
+}
+
+// NavigateCharacterTo434 performs the same guarded ground navigation as
+// NavigateCharacter434, but permits a caller to supply a destination selected
+// from a previously observed world snapshot. The route is always recalculated
+// from the fresh login position and subjected to the caller's conservative
+// scouting bounds; supplying a point is not permission to teleport.
+func NavigateCharacterTo434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, finder RouteFinder434, destination *pathfinding.Point3D) (NavigationAttempt434, error) {
 	a := NavigationAttempt434{World: WorldState434Result{Opcodes: map[uint16]int{}, WorldVariables: map[uint32]int32{}}}
 	if name == "" || instance == "" || finder == nil {
 		return a, fmt.Errorf("explicit character, instance and MMap finder required")
@@ -270,6 +279,13 @@ func NavigateCharacter434(ctx context.Context, user string, key []byte, realm Re
 			return err
 		}
 		controller := navigationController434{ctx: ctx, result: &a, finder: finder}
+		if destination != nil {
+			requested := *destination
+			controller.destination = func(*WorldState434Result) (pathfinding.Point3D, error) { return requested, nil }
+			controller.validate = func(start, dest pathfinding.Point3D, route *pathfinding.PathResult) ([]Position434, error) {
+				return validateBoundedRoute434(start, dest, route, 16, 2, 24, 32)
+			}
+		}
 		return awaitSession434(ctx, w, strings.ToUpper(user), instance, &a.World.Login, openInstance434, a.World.observe, func() (bool, error) { return controller.stage == 6, nil }, controller.tick)
 	})
 	return a, err

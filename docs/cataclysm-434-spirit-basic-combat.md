@@ -125,3 +125,24 @@ Next prerequisite: resolve route/isolation suitability for this first controlled
 kill without weakening navigation guards or manufacturing the fixture. The
 requested reusable basic combat engine milestone remains appropriate **after**
 a future independently verified 0/6 to 1/6 PASS, before Hunter integration.
+
+## Bounded scouting development checkpoint
+
+The next code-only checkpoint adds generic non-combat scouting rather than
+changing the failed fixture or lowering navigation/isolation thresholds. When
+the current snapshot has no eligible objective, the client considers at most
+four observation points, in deterministic forward/left/right/back order, at a
+12-yard radius. Every point requires a normal MMap path, the existing 0.3 grade
+limit, bounded path length and segment count, and more than the configured
+10-yard assistance clearance from known attackable units at the endpoint and
+along the route after the unavoidable first four yards of departure.
+
+After each completed scout move the command reconnects normally, rebuilds the
+live object store, reprojects quest progress, and reruns candidate isolation.
+It performs at most four moves/five observations and returns `BAD_TEST` when
+that budget or the available safe points are exhausted. The scouting API has
+no selection or attack callback, so it cannot start combat or proceed to a
+second target. Candidate ordering remains isolation-first, with shorter route
+length and GUID used as deterministic tie breakers. The 30-yard combat
+snapshot threshold remains unchanged and intentionally accounts conservatively
+for the researched 15-yard wander and 10-yard assistance assumptions.

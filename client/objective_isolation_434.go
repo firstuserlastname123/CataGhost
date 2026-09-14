@@ -27,6 +27,7 @@ type ObjectiveIsolation434 struct {
 	Neighbors        []ObjectiveNeighbor434
 	RouteError       string
 	MinimumClearance float64
+	RouteLength      float64
 	Eligible         bool
 }
 
@@ -67,6 +68,7 @@ func InspectObjectiveIsolation434(observation QuestProgressObservation434, finde
 			var route *pathfinding.PathResult
 			route, routeErr = finder.FindPath(uint32(p.Map), point434(*p.Position), point434(dest))
 			if routeErr == nil {
+				v.RouteLength = float64(route.PathLength())
 				positions, routeErr = validateBoundedRoute434(point434(*p.Position), point434(dest), route, 40, 1, 50, 64)
 			}
 		}
@@ -115,6 +117,9 @@ func InspectObjectiveIsolation434(observation QuestProgressObservation434, finde
 		}
 		if out[i].MinimumClearance != out[j].MinimumClearance {
 			return out[i].MinimumClearance > out[j].MinimumClearance
+		}
+		if out[i].RouteLength != out[j].RouteLength {
+			return out[i].RouteLength < out[j].RouteLength
 		}
 		return out[i].Candidate.GUID < out[j].Candidate.GUID
 	})
