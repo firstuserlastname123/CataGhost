@@ -35,7 +35,7 @@ func main() {
 			continue
 		}
 		switch a {
-		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation", "npc-interaction", "quest-acceptance", "quest-reconnect", "quest-progress":
+		case "cli", "node", "server", "orchestrator", "scenario", "auth", "world-auth", "char-enum", "char-login", "world-state", "movement", "navigation", "npc-interaction", "quest-acceptance", "quest-reconnect", "quest-progress", "objective-progress", "pet-safety", "pet-control-gate":
 			runMode = a
 			verbIdx = i
 			goto foundVerb
@@ -234,6 +234,24 @@ foundVerb:
 	case "npc-interaction":
 		if err := runNPCInteraction(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress); err != nil {
 			fmt.Fprintf(os.Stderr, "NPC interaction failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "pet-safety", "pet-control-gate":
+		if uint64(*inspectedQuest) != 28713 {
+			fmt.Fprintln(os.Stderr, "BAD_TEST: pet-safety probe requires explicit quest 28713")
+			os.Exit(1)
+		}
+		if err := runPetProbe(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress, uint32(*inspectedQuest), runMode == "pet-control-gate"); err != nil {
+			fmt.Fprintf(os.Stderr, "Pet safety failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "objective-progress":
+		if uint64(*inspectedQuest) != 28713 {
+			fmt.Fprintln(os.Stderr, "BAD_TEST: this one-credit QA milestone requires explicit quest 28713")
+			os.Exit(1)
+		}
+		if err := runObjectiveProgress(cliCfg, *realmName, *expectedWorld, *loginName, *instanceAddress, uint32(*inspectedQuest)); err != nil {
+			fmt.Fprintf(os.Stderr, "Objective progress failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "quest-progress":
