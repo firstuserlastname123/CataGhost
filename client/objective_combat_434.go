@@ -101,7 +101,7 @@ func objectiveCandidates434(s *ObjectStore434, f *NPCFactions434, entry uint32) 
 	}
 	var out []ObjectiveCandidate434
 	for _, n := range s.Objects() {
-		if entry == 0 || n.Fields[FieldEntry434] != entry || n.Type != 3 || n.GUID>>52 != 0xf13 || n.Map != p.Map || n.Position == nil || !finitePosition434(n.Position) {
+		if entry != 0 && n.Fields[FieldEntry434] != entry || n.Type != 3 || n.GUID>>52 != 0xf13 || n.Map != p.Map || n.Position == nil || !finitePosition434(n.Position) {
 			continue
 		}
 		u, err := combatUnit434(&n)

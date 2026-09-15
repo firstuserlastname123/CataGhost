@@ -1,5 +1,35 @@
 # Spirit controlled combat preflight — BAD_TEST, no combat attempted
 
+## Single controlled combat probe (code-only checkpoint)
+
+`single-combat` is an additional, quest-independent validation path. It
+requires an explicit existing character name, discovers ordinary live hostile
+or neutral attackable creatures from the object store, rejects player,
+controlled, service, dead, damaged, engaged, route-invalid, and non-isolated
+units, and ranks eligible candidates by isolation clearance, route length, and
+GUID. It does not change or replace the objective/scouting path below.
+
+The command performs one guarded MMap approach, reconnects, revalidates the
+same GUID and the surrounding 30-yard isolation snapshot, and sends one
+`CMSG_SET_SELECTION` plus one `CMSG_ATTACK_SWING`. It observes server attack
+start, authoritative object health, combat participants, and server attack
+stop. Target health zero, a living player, and server-observed termination are
+all required. Player health at or below 30%, any second creature targeting the
+player in combat, timeout, network loss, cancellation, or ambiguous state
+causes an abort (with `CMSG_ATTACK_STOP` attempted after a swing). There is no
+loot, spell, recovery, second-selection, or second-kill path.
+
+Windows build and the one-test operator invocation are:
+
+```powershell
+go build -o bin\azghost.exe .\cmd\azghost
+.\bin\azghost.exe single-combat --profile trinity-qa --realm-name "Trinity" --expected-world-address "127.0.0.1:8085" --login-character "Spirit" --expected-instance-address "127.0.0.1:8086" --data-dir "C:\\CataGhost\\data"
+```
+
+Endpoint, realm, profile, and data paths above remain operator-supplied fixture
+values and must be adjusted to the actual QA configuration. This checkpoint is
+not live verified.
+
 2026-09-14. Branch `codex/cata-434-basic-combat`, worktree
 `C:/CataBotLab/CataGhost/bin/worktrees/cata-434-basic-combat`, based on clean
 integration `0b36580f8b811609fff00da7404133ab204fa200`.
