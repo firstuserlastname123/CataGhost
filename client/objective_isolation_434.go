@@ -54,13 +54,33 @@ func InspectObjectiveIsolation434(observation QuestProgressObservation434, finde
 	if err != nil {
 		return nil, err
 	}
-	s := &observation.World.Store
+	return inspectCombatIsolation434(observation.World, finder, factions, objective.Target, false)
+}
+
+// InspectSingleCombatTargets434 applies the objective combat safety model to
+// every ordinary attackable creature in a live world snapshot. Unlike the
+// objective preflight it has no quest or creature-entry dependency.
+func InspectSingleCombatTargets434(world WorldState434Result, finder RouteFinder434, factions *NPCFactions434) ([]ObjectiveIsolation434, error) {
+	return inspectCombatIsolation434(world, finder, factions, 0, true)
+}
+
+func inspectCombatIsolation434(world WorldState434Result, finder RouteFinder434, factions *NPCFactions434, entry uint32, rejectServices bool) ([]ObjectiveIsolation434, error) {
+	if err := VerifyUncontrolledPlayer434(&world.Store); err != nil {
+		return nil, err
+	}
+	s := &world.Store
 	p := s.objects[s.PlayerGUID]
 	if p == nil || p.Position == nil || finder == nil || factions == nil {
 		return nil, fmt.Errorf("UNKNOWN: isolation requires player position, factions and route finder")
 	}
 	var out []ObjectiveIsolation434
-	for _, candidate := range objectiveCandidates434(s, factions, objective.Target) {
+	for _, candidate := range objectiveCandidates434(s, factions, entry) {
+		if rejectServices {
+			n := s.objects[candidate.GUID]
+			if n == nil || n.Fields[FieldNPCFlags434] != 0 {
+				continue
+			}
+		}
 		v := ObjectiveIsolation434{Candidate: candidate, MinimumClearance: math.MaxFloat64}
 		dest, routeErr := npcDestination434(*p.Position, NPCCandidate434{Position: candidate.Position})
 		var positions []Position434

@@ -290,6 +290,47 @@ func NavigateCharacterTo434(ctx context.Context, user string, key []byte, realm 
 	})
 	return a, err
 }
+
+// NavigateCharacterCombatApproach434 uses the existing movement controller
+// with the same 40-yard route envelope used by objective isolation. The target
+// GUID must still be present and live after reconnect; this does not attack it.
+func NavigateCharacterCombatApproach434(ctx context.Context, user string, key []byte, realm RealmInfo, name, instance string, finder RouteFinder434, target uint64) (NavigationAttempt434, error) {
+	a := NavigationAttempt434{World: WorldState434Result{Opcodes: map[uint16]int{}, WorldVariables: map[uint32]int32{}}}
+	if name == "" || instance == "" || finder == nil || target == 0 {
+		return a, fmt.Errorf("explicit combat navigation inputs required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	err := withWorld434(ctx, user, key, realm, func(w *worldWire434) error {
+		roster, err := enumerateOnWorld434(w)
+		if err != nil {
+			return err
+		}
+		character, err := selectLoginCharacter434(roster, name)
+		if err != nil {
+			return err
+		}
+		a.World.Login.Character = character
+		a.World.Store.PlayerGUID = character.GUID
+		if err := w.send(cataPlayerLogin, loginGUID434(character.GUID)); err != nil {
+			return err
+		}
+		controller := navigationController434{ctx: ctx, result: &a, finder: finder}
+		controller.destination = func(world *WorldState434Result) (pathfinding.Point3D, error) {
+			p, n := world.Store.objects[world.Store.PlayerGUID], world.Store.objects[target]
+			if p == nil || p.Position == nil || n == nil || n.Position == nil || n.Type != 3 || n.Map != p.Map {
+				return pathfinding.Point3D{}, fmt.Errorf("BAD_TEST: combat target unavailable after reconnect")
+			}
+			d, e := npcDestination434(*p.Position, NPCCandidate434{Position: *n.Position})
+			return point434(d), e
+		}
+		controller.validate = func(start, dest pathfinding.Point3D, route *pathfinding.PathResult) ([]Position434, error) {
+			return validateBoundedRoute434(start, dest, route, 40, 1, 50, 64)
+		}
+		return awaitSession434(ctx, w, strings.ToUpper(user), instance, &a.World.Login, openInstance434, a.World.observe, func() (bool, error) { return controller.stage == 6, nil }, controller.tick)
+	})
+	return a, err
+}
 func ValidateNavigationProof434(a NavigationAttempt434, final WorldState434Result) (Movement434, float64, error) {
 	if a.Executed < 2 || a.Executed != len(a.Segments) || a.World.Store.PlayerGUID != final.Store.PlayerGUID || a.World.Login.Character.Name != final.Login.Character.Name || final.Login.Map != 1 {
 		return Movement434{}, 0, fmt.Errorf("navigation proof identity/map/execution mismatch")
